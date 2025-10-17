@@ -32,6 +32,27 @@ def home():
         "endpoints": ["/build-app"]
     })
 
+# Add this test endpoint to your Flask app temporarily
+@app.route('/test-gemini', methods=['GET'])
+def test_gemini():
+    try:
+        GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={GEMINI_API_KEY}"
+        
+        payload = {
+            "contents": [{"parts": [{"text": "Say hello"}]}],
+            "generationConfig": {"temperature": 0.5, "maxOutputTokens": 100}
+        }
+        
+        response = requests.post(GEMINI_URL, json=payload, timeout=30)
+        
+        return jsonify({
+            "status_code": response.status_code,
+            "response": response.json()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 @app.route('/build-app', methods=['POST'])
 def build_app():
@@ -91,7 +112,49 @@ def build_app():
         
         if not pages_url:
             return jsonify({"error": "Failed to enable GitHub Pages"}), 500
-        
+
+        # NEW STEP 5.5: Wait for deployment to complete (Round 2 only)
+
+        # STEP 5.5: Wait for deployment to complete (both rounds)
+        import time
+        print(f"⏳ Waiting 47 seconds for GitHub Pages to deploy Round {round_num} changes...")
+        time.sleep(47)
+        print("✅ Deployment wait complete")
+
+        # import time
+        # if round_num == 1:
+        #     print("⏳ Waiting 47 seconds for GitHub Pages to deploy Round 1 changes...")
+        #     time.sleep(47)
+        #     print("✅ Deployment wait complete")
+
+        # if round_num == 2:
+        #     # NOW update README (after deployment is done)
+        #     repo_name = task.replace(' ', '-').lower()
+        #     update_readme_after_deployment(repo_name, generated_code.get('readme', ''))
+        #     print("⏳ Waiting 47 seconds for GitHub Pages to deploy Round 2 changes...")
+        #     time.sleep(47)
+        #     print("✅ Deployment wait complete")
+
+
+        # if round_num == 2:
+        #     # Update README and VERIFY it completed
+        #     repo_name = task.replace(' ', '-').lower()
+        #     readme_content = generated_code.get('readme', '')
+            
+        #     print(f"📝 Committing README update ({len(readme_content)} chars)...")
+        #     success = update_readme_after_deployment(repo_name, readme_content)
+            
+        #     if not success:
+        #         print("❌ CRITICAL: README commit failed!")
+        #         return jsonify({"error": "Failed to update README"}), 500
+            
+        #     print("✅ README commit completed")
+            
+        #     # Now wait for deployment
+        #     print("⏳ Waiting 47 seconds for GitHub Pages to deploy Round 2 changes...")
+        #     time.sleep(47)
+        #     print("✅ Deployment wait complete")
+
         # STEP 6: Notify evaluation URL
         print("📤 Notifying evaluation URL...")
         notification_success = notify_evaluation_url(
@@ -456,7 +519,7 @@ def update_github_repo(repo_name, generated_code, brief):
         
         commit_sha = None
         
-        for filename, content in files_to_update.items():
+        for i, (filename, content) in enumerate(files_to_update.items()):
             get_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo_name}/contents/{filename}"
             response = requests.get(get_url, headers=headers)
             
@@ -474,6 +537,30 @@ def update_github_repo(repo_name, generated_code, brief):
                 commit_sha = response.json()['commit']['sha']
                 
                 print(f"✅ Updated {filename}")
+                # if filename == "index.html":
+                #     import time
+                #     print("⏳ Waiting 20 seconds for first deployment to start...")
+                #     time.sleep(5)
+        
+        # ONLY commit index.html (README will be updated later)
+        # html_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo_name}/contents/index.html"
+        # html_response = requests.get(html_url, headers=headers)
+        
+        # if html_response.status_code == 200:
+        #     html_sha = html_response.json()['sha']
+            
+        #     html_data = {
+        #         "message": "Round 2: Update functionality",
+        #         "content": base64.b64encode(generated_code['html'].encode()).decode(),
+        #         "sha": html_sha
+        #     }
+            
+        #     response = requests.put(html_url, headers=headers, json=html_data)
+        #     response.raise_for_status()
+        #     commit_sha = response.json()['commit']['sha']
+            
+        #     print(f"✅ Updated index.html (README will be updated after deployment)")
+                
         
         repo_url = f"https://github.com/{GITHUB_USERNAME}/{repo_name}"
         return repo_url, commit_sha
@@ -483,6 +570,40 @@ def update_github_repo(repo_name, generated_code, brief):
         import traceback
         traceback.print_exc()
         return None, None
+
+
+
+def update_readme_after_deployment(repo_name, readme_content):
+    """Update README after main deployment completes"""
+    try:
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        readme_url = f"https://api.github.com/repos/{GITHUB_USERNAME}/{repo_name}/contents/README.md"
+        readme_response = requests.get(readme_url, headers=headers)
+        
+        if readme_response.status_code == 200:
+            readme_sha = readme_response.json()['sha']
+            
+            readme_data = {
+                "message": "Round 2: Update documentation",
+                "content": base64.b64encode(readme_content.encode()).decode(),
+                "sha": readme_sha
+            }
+            
+            response = requests.put(readme_url, headers=headers, json=readme_data)
+            response.raise_for_status()
+            
+            print(f"✅ Updated README.md")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"⚠️ README update failed (non-critical): {str(e)}")
+        return False
 
 
 def enable_github_pages(repo_name):
